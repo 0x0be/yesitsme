@@ -9,7 +9,6 @@ import hashlib
 import urllib
 import requests
 from httpx import get
-from bs4 import BeautifulSoup
 from colorama import Fore, Back, Style, init
 
 colorama.init(autoreset=True)
@@ -95,10 +94,130 @@ def dumpor(name):
     try:
         account_list = []
         response = requests.get(req, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        accounts = soup.findAll('a', {"class": "profile-name-link"})
-        for account in accounts:
-            account_list.append(account.text)
+
+		#e.g. https://www.instagram.com/profile/my_user_account
+		PROFILE_LINK_MIN__LENGTH = 64;
+		PROFILE_LINK_MAX__LENGTH = 2048;
+		len_profile_link = 0;
+		#Parse state
+        stage = 0;
+		#
+		quoted = false;
+		chevved = false;
+		tagged = false;
+		skip_close_tags = true;
+		skipping_close_tag = false;
+		cnt_nested_elements = 0;
+		#
+		#Parse tree state
+		#def node_root = 0, node_head = 1, node_body = 2, node_foot = 3, node_a = 4, node_div = 5, node_span = 6, node_select = 7, node_input = 8 
+		#e.g. var depth_tracker = [ node_root, node_body, node_div, node_span ]
+		#
+
+		len_response = response.length();
+        for ofs_response in range(0, len_response):
+			if stage == 0:
+				len_profile_link = 0;
+				cnt_nested_elements = 0;
+				quoted = false;
+				chevved = false;
+				tagged = false;
+				skip_close_tags = true;
+				skipping_close_tag = false;
+				cnt_nested_elements = 0;
+		
+			if response[ofs_response] == "\":
+				if quoted == false:
+					quoted = true
+			    else:
+					quoted = false
+				
+			if chevved == false && quoted == false && response[ofs_response] == "<":
+				chevved = true
+		
+			if chevved == true && quoted == false && response[ofs_response] == ">":
+				tagged = true
+				chevved = false
+
+			if tagged == true && quoted == false && ((len_response - ofs_response) > 2) && response[ofs_response - 1] == "<" && response[ofs_response] == "/":
+				if skip_close_tags == true:
+					skipping_close_tag = true
+		
+				tagged = false
+
+			if skipping_close_tag == true && quoted == false && response[ofs_response] == ">":
+				skipping_close_tag = false
+
+            match stage:
+                case 0:
+				    if chevved == true && quoted == false && ((len_response - ofs_response) > 2) && response[ofs_response - 2] == '<' && response[ofs_response - 1] == 'a' && response[ofs_response] == ' ':
+					    stage = 1
+						continue
+					
+					continue
+
+                case 1:
+					if quoted == false && response[ofs_response] == ">":
+						stage = 0
+						continue
+					
+				    if chevved == true && quoted == true && ((len_response - ofs_response) > 7) && response[ofs_response - 6 : ofs_response] == "class=\"":
+					    stage = 2
+						continue
+
+					continue
+            
+				case 2:
+					if response[ofs_response] != " " && response[ofs_response] != "\"":
+						continue
+
+					#winner, winner; chicken; dinner.
+					if ((len_response - ofs_response) > 17) && response[ofs_response - 17 : ofs_response - 1] == "profile-name-link":
+						stage = 3
+						continue
+							 
+					if response[ofs_response] == "\"":
+						stage = 1
+						continue
+
+					continue
+
+	        	case 3:							 
+					if response[ofs_response] == '>':
+						if response[ofs_response - 1] == "/":
+							stage = 0
+						else:
+							stage = 4
+							
+						continue
+
+					continue
+                
+				case 4:
+					if response[ofs_response - 1] == "<" && response[ofs_response] != "/":
+						if len_profile_link > 0:
+							account_list.append(response[ofs_response - len_profile_link : ofs_response - 2])
+							stage = 0
+							continue
+						else:
+							++cnt_nested_elements;
+							continue
+
+					if response[ofs_response - 1] == "<" && response[ofs_response] == "/":
+						if cnt_nested_elements == 0:
+							account_list.append(response[ofs_response - len_profile_link : ofs_response - 2])
+							stage = 0
+							continue
+						else:
+							--cnt_nested_elements;
+							continue
+
+					if cnt_nested_elements == 0:
+						len_profile_link++
+						continue
+							 
+					continue
+
         return({"user": account_list, "error": None})
     except:
         return({"user": None, "error": "rate limit"})
@@ -242,3 +361,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
